@@ -15,7 +15,7 @@ Inspect the local store.
 - [`mbx cache import <ARCHIVE>`](/cli/cache/import.md)
 - [`mbx cache largest [--limit <LIMIT>]`](/cli/cache/largest.md)
 - [`mbx cache projects`](/cli/cache/projects.md)
-- [`mbx cache remove <WORKSPACE>`](/cli/cache/remove.md)
+- [`mbx cache remove [--interactive] [WORKSPACE]`](/cli/cache/remove.md)
 - [`mbx cache stats [--json]`](/cli/cache/stats.md)
 - [`mbx cache trace <SESSION>`](/cli/cache/trace.md)
 - [`mbx cache verify`](/cli/cache/verify.md)

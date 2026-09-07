@@ -30,7 +30,7 @@
 - [`mbx cache verify`](/cli/cache/verify.md)
 - [`mbx cache export [--group <GROUP>] <ARCHIVE>`](/cli/cache/export.md)
 - [`mbx cache import <ARCHIVE>`](/cli/cache/import.md)
-- [`mbx cache remove <WORKSPACE>`](/cli/cache/remove.md)
+- [`mbx cache remove [--interactive] [WORKSPACE]`](/cli/cache/remove.md)
 - [`mbx clean [WORKSPACE]`](/cli/clean.md)
 - [`mbx tui [--once]`](/cli/tui.md)
 - [`mbx stats [--json]`](/cli/stats.md)
