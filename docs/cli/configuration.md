@@ -184,7 +184,7 @@ Log filter for mbx's own diagnostics, such as `debug` or `mbx=trace`.
 - **Optional:** true
 - **Set with:** `MBX_REMOTE_GCS_ENDPOINT`
 
-GCS endpoint for a store that is an emulator or non-default host.
+GCS endpoint for a store that is an emulator or non-default host. Must use HTTPS, except for loopback development servers.
 
 ### `remote.mode`
 

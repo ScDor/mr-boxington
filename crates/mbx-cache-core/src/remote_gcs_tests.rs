@@ -443,3 +443,20 @@ async fn metadata_server_token_resolution() {
         std::env::remove_var("GCP_METADATA_SERVER_URL");
     }
 }
+
+#[tokio::test]
+async fn storing_a_mismatched_blob_source_is_rejected_before_post() {
+    let server = mockito::Server::new_async().await;
+    let expected_digest = CacheDigest::blake3(b"expected contents");
+    let actual_contents = b"completely different contents";
+
+    let error = test_store(&server)
+        .put_blob(&BlobUpload {
+            digest: expected_digest,
+            source: BlobSource::Bytes(actual_contents.to_vec()),
+        })
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("do not match expected digest"));
+}

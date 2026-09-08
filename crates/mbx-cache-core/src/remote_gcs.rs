@@ -54,7 +54,7 @@ pub struct GcsRemoteCacheConfig {
     pub endpoint: Option<Url>,
     /// Optional bearer token, if explicitly configured.
     pub token: Option<String>,
-    /// Optional token file or service account file.
+    /// Optional file containing a bearer token.
     pub token_file: Option<PathBuf>,
     /// Maximum time allowed to establish a connection.
     pub connect_timeout: Duration,
@@ -178,13 +178,20 @@ impl GcsRemoteCache {
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::RequestBuilder> {
-        if let Some(token) = self.token_provider.get_token().await? {
+        let is_https = self.endpoint.scheme() == "https";
+        let is_loopback = self.endpoint.host().is_some_and(|host| match host {
+            url::Host::Domain(host) => host.eq_ignore_ascii_case("localhost"),
+            url::Host::Ipv4(address) => address.is_loopback(),
+            url::Host::Ipv6(address) => address.is_loopback(),
+        });
+        if (is_https || is_loopback)
+            && let Some(token) = self.token_provider.get_token().await?
+        {
             let mut value = HeaderValue::from_str(&format!("Bearer {token}"))?;
             value.set_sensitive(true);
-            Ok(request.header(AUTHORIZATION, value))
-        } else {
-            Ok(request)
+            return Ok(request.header(AUTHORIZATION, value));
         }
+        Ok(request)
     }
 
     pub(crate) async fn check_connection(&self) -> Result<()> {
@@ -486,6 +493,26 @@ impl GcsRemoteCache {
 
     pub(crate) async fn put_blob(&self, upload: &BlobUpload) -> Result<()> {
         upload.digest.validate()?;
+        match &upload.source {
+            BlobSource::Bytes(bytes) => {
+                if !upload.digest.matches_bytes(bytes)? {
+                    bail!("source bytes do not match expected digest");
+                }
+            }
+            BlobSource::File(file) => {
+                if !upload.digest.matches_file(file.path())? {
+                    bail!("source file does not match expected digest");
+                }
+            }
+            BlobSource::Path(path) => {
+                if !upload.digest.matches_file(path)? {
+                    bail!(
+                        "source file at {} does not match expected digest",
+                        path.display()
+                    );
+                }
+            }
+        }
         let key = self.object_key(ObjectKind::Blob, &upload.digest)?;
         let url = self.upload_object_url(&key, &[("ifGenerationMatch", "0")])?;
         retry_async("POST", &url, self.retries, || async {
@@ -623,9 +650,16 @@ impl GcsTokenProvider {
                     path.display()
                 )
             })?;
-            let token = content.trim().to_string();
+            let token = content.trim();
+            if token.starts_with('{') {
+                bail!(
+                    "remote GCS token file {} contains a JSON service account key. \
+                     Set GOOGLE_APPLICATION_CREDENTIALS or configure a bearer token",
+                    path.display()
+                );
+            }
             if !token.is_empty() {
-                return Ok(Some(token));
+                return Ok(Some(token.to_string()));
             }
         }
 

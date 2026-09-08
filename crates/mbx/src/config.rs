@@ -269,7 +269,7 @@ struct RawRemote {
         choices("auto", "required", "off")
     )]
     s3_conditional_writes: String,
-    /// GCS endpoint for a store that is an emulator or non-default host.
+    /// GCS endpoint for a store that is an emulator or non-default host. Must use HTTPS, except for loopback development servers.
     #[usage(env = "MBX_REMOTE_GCS_ENDPOINT", ty = "url")]
     gcs_endpoint: Option<String>,
 }
