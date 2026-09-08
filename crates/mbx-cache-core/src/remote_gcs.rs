@@ -106,6 +106,8 @@ impl GcsRemoteCache {
             .connect_timeout(config.connect_timeout)
             .read_timeout(config.read_timeout)
             .redirect(reqwest::redirect::Policy::none())
+            .tcp_keepalive(Some(Duration::from_secs(60)))
+            .pool_idle_timeout(Some(Duration::from_secs(90)))
             .build()?;
 
         let endpoint = match &config.endpoint {
@@ -306,17 +308,19 @@ impl GcsRemoteCache {
             fs::create_dir_all(staging_dir)?;
             let temporary = tempfile::NamedTempFile::new_in(staging_dir)?;
             let mut output = tokio::fs::File::from_std(temporary.reopen()?);
+            let mut hasher = StreamHasher::for_digest(digest)?;
             let mut written = 0u64;
             while let Some(chunk) = response.chunk().await? {
                 written += chunk.len() as u64;
                 if written > digest.size {
                     bail!("remote cache blob exceeded the size of its digest");
                 }
+                hasher.update(&chunk);
                 output.write_all(&chunk).await?;
             }
             output.flush().await?;
             drop(output);
-            if !digest.matches_file(temporary.path())? {
+            if !hasher.matches(&digest.hash) {
                 bail!("remote cache blob failed digest verification");
             }
             Ok(temporary)
@@ -602,6 +606,42 @@ impl GcsRemoteCache {
             created: 0,
             existing: 0,
         }))
+    }
+}
+
+/// Incremental stream hasher supporting blake3 and sha256 to avoid re-reading downloaded blobs from disk.
+enum StreamHasher {
+    Blake3(Box<blake3::Hasher>),
+    Sha256(sha2::Sha256),
+}
+
+impl StreamHasher {
+    fn for_digest(digest: &CacheDigest) -> Result<Self> {
+        match digest.algorithm.as_str() {
+            "blake3" => Ok(Self::Blake3(Box::new(blake3::Hasher::new()))),
+            "sha256" => Ok(Self::Sha256(<sha2::Sha256 as sha2::Digest>::new())),
+            other => bail!("unsupported digest algorithm {other:?}"),
+        }
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        match self {
+            Self::Blake3(hasher) => {
+                hasher.update(bytes);
+            }
+            Self::Sha256(hasher) => {
+                <sha2::Sha256 as sha2::Digest>::update(hasher, bytes);
+            }
+        }
+    }
+
+    fn matches(self, expected: &str) -> bool {
+        match self {
+            Self::Blake3(hasher) => hasher.finalize().to_hex().as_str() == expected,
+            Self::Sha256(hasher) => {
+                hex::encode(<sha2::Sha256 as sha2::Digest>::finalize(hasher)) == expected
+            }
+        }
     }
 }
 
