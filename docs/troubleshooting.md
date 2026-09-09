@@ -87,6 +87,27 @@ with your CI's own cache mechanism (for example, GitLab's `cache:` key) the
 same way you would persist `~/.cache/mbx` otherwise, or the cache starts cold
 on every job.
 
+### The warning says "cloning unsupported" instead
+
+A different `mbx doctor` warning names the failure "cloning unsupported"
+rather than "different filesystems":
+
+```text
+warn  reflink      /root/.cache/mbx -> /builds/acme/backend/target: cloning unsupported (Operation not supported (os error 95)); restores to this location may require copying. The filesystem driver here has no clone operation at all, regardless of which directory is used...
+```
+
+`MBX_CACHE_DIR` does not fix this one. "Different filesystems" means the two
+paths are on separate mounts, which choosing a co-located directory solves.
+"Cloning unsupported" means the filesystem driver itself has no clone
+operation, so every directory on that filesystem is equally unable to
+reflink. This is common when a container's root filesystem uses a storage
+driver such as Docker's `overlay2` without a reflink-capable backing
+filesystem; reflinks need the backing filesystem itself to support them, such
+as Btrfs or XFS formatted with `reflink=1`. Ask whoever manages the runner or
+container host to check the storage driver and backing filesystem. Until
+that changes, restores on that host copy bytes instead of cloning them, and
+`MBX_CACHE_DIR` placement has no effect either way.
+
 ## Inspect a build
 
 ```sh

@@ -362,7 +362,16 @@ fn reflink_check_with(
                      directory (for example, inside the job workspace) to restore cloning.",
                 ),
                 std::io::ErrorKind::PermissionDenied => ("permission denied", ""),
-                std::io::ErrorKind::Unsupported => ("cloning unsupported", ""),
+                std::io::ErrorKind::Unsupported => (
+                    "cloning unsupported",
+                    " The filesystem driver here has no clone operation at all, regardless of \
+                     which directory is used: this is common when a container's root \
+                     filesystem uses a storage driver such as Docker's overlay2 without a \
+                     reflink-capable backing filesystem. The backing filesystem itself needs to \
+                     support clones, such as Btrfs or XFS formatted with reflink=1; ask \
+                     whoever manages the runner or container host to check the storage driver \
+                     and backing filesystem, or accept that restores here will always copy.",
+                ),
                 _ => ("clone probe failed", ""),
             };
             Check::warn(
@@ -872,6 +881,24 @@ mod layout_tests {
         });
         assert_eq!(result.severity, Severity::Warn);
         assert!(result.detail.contains("MBX_CACHE_DIR"));
+    }
+
+    /// `Unsupported` means the filesystem driver has no clone operation at
+    /// all, commonly a container storage driver such as overlay2 without a
+    /// reflink-capable backing filesystem. Unlike `CrossesDevices`, no path
+    /// choice fixes this, so the warning must not repeat the MBX_CACHE_DIR
+    /// hint and should instead name the storage-driver/backing-filesystem
+    /// cause.
+    #[test]
+    fn unsupported_failure_names_the_storage_driver_not_the_cache_dir() {
+        let cache = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        let result = reflink_check_with(cache.path(), target.path(), |_, _| {
+            Err(std::io::ErrorKind::Unsupported.into())
+        });
+        assert_eq!(result.severity, Severity::Warn);
+        assert!(result.detail.contains("storage driver"));
+        assert!(!result.detail.contains("MBX_CACHE_DIR"));
     }
 
     #[cfg(unix)]
